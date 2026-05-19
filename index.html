@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#FAE8E4" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Meal Planner" />
+  <title>Meal Planner</title>
+  <link rel="manifest" href="manifest.json" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #FAE8E4; font-family: 'Nunito', sans-serif; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-thumb { background: #D9C8C5; border-radius: 10px; }
+    input:focus, textarea:focus { border-color: #F2A8BB !important; outline: none; }
+    button { font-family: 'Nunito', sans-serif; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    const DAYS  = ["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"];
+    const MEALS = ["Comida","Cena"];
+
+    const T = {
+      pageBg:"#FAE8E4", cardBg:"#FFFFFF", cardBorder:"#D9C8C5",
+      dayPill:"#F2A8BB", dayPillText:"#3D2525",
+      mealTag:"#93C9C0", mealTagText:"#1C4F49", mealTagBorder:"#6FB5AC",
+      placeholder:"#C4A8A3", mainText:"#2E1E1C", subText:"#7A5E5A",
+      navBg:"#FFFFFF", navBorder:"#EDD8D4", navInactive:"#B09490",
+      accentPink:"#E8879E", accentMint:"#5AAA9F",
+    };
+
+    const inp = {
+      border:`1.5px solid ${T.cardBorder}`, borderRadius:12, padding:"9px 12px",
+      fontSize:14, outline:"none", fontFamily:"inherit", width:"100%",
+      boxSizing:"border-box", background:"#FFF8F7", color:T.mainText,
+    };
+
+    function save(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch(e){} }
+    function load(key, def) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : def; } catch(e){ return def; } }
+
+    function makeWeek() {
+      const w = {};
+      DAYS.forEach(d => { w[d] = {}; MEALS.forEach(m => { w[d][m] = { name:"", macros:{kcal:"",prot:"",carbs:"",fat:""}, recipeId:null }; }); });
+      return w;
+    }
+
+    function Pill({ children, onClick, bg=T.accentPink, color="#fff", style={}, disabled=false }) {
+      return (
+        <button onClick={onClick} disabled={disabled} style={{
+          background:bg, color, border:"none", borderRadius:30,
+          padding:"8px 20px", fontWeight:800, fontSize:13,
+          cursor:disabled?"not-allowed":"pointer",
+          opacity:disabled?0.55:1, transition:"opacity 0.15s", ...style,
+        }}>{children}</button>
+      );
+    }
+
+    function MacroChips({ macros }) {
+      const chips = [
+        {k:"kcal",label:"⚡",v:macros.kcal,c:"#E6933A"},
+        {k:"prot",label:"P",v:macros.prot,c:T.accentMint},
+        {k:"carbs",label:"C",v:macros.carbs,c:"#6B9FD4"},
+        {k:"fat",label:"G",v:macros.fat,c:"#D47BA0"},
+      ].filter(x=>x.v);
+      if (!chips.length) return null;
+      return (
+        <div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:5}}>
+          {chips.map(x => (
+            <span key={x.k} style={{fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:20,background:x.c+"20",color:x.c,fontFamily:"monospace"}}>
+              {x.label} {x.v}{x.k==="kcal"?" kcal":"g"}
+            </span>
+          ))}
+        </div>
+      );
+    }
+
+    function TicketIcon() {
+      return (
+        <svg width="36" height="24" viewBox="0 0 52 34" fill="none">
+          <rect x="1" y="1" width="50" height="32" rx="6" fill={T.mealTag} stroke={T.mealTagBorder} strokeWidth="1.5"/>
+          <circle cx="13" cy="17" r="4" fill="white" opacity="0.6"/>
+          <circle cx="39" cy="17" r="4" fill="white" opacity="0.6"/>
+          <line x1="13" x2="13" y1="4" y2="30" stroke="white" strokeWidth="1.5" strokeDasharray="3 2" opacity="0.5"/>
+          <line x1="39" x2="39" y1="4" y2="30" stroke="white" strokeWidth="1.5" strokeDasharray="3 2" opacity="0.5"/>
+          <text x="26" y="22" textAnchor="middle" fill="white" fontSize="14" fontWeight="900" fontFamily="sans-serif">+</text>
+        </svg>
+      );
+    }
+
+    function MealRow({ meal, entry, onChange, onLinkRecipe, recipes, isLast }) {
+      const [editing, setEditing] = useState(false);
+      const [draft, setDraft]     = useState(entry);
+      const linked = entry.recipeId ? recipes.find(r=>r.id===entry.recipeId) : null;
+
+      function open()   { setDraft(entry); setEditing(true); }
+      function save2()  { onChange(draft); setEditing(false); }
+      function cancel() { setDraft(entry); setEditing(false); }
+      function clear()  { onChange({name:"",macros:{kcal:"",prot:"",carbs:"",fat:""},recipeId:null}); setEditing(false); }
+
+      const tagStyle = {
+        background:T.mealTag, color:T.mealTagText, border:`1.5px solid ${T.mealTagBorder}`,
+        borderRadius:8, padding:"6px 14px", fontSize:11, fontWeight:900,
+        letterSpacing:1, flexShrink:0, minWidth:72, textAlign:"center",
+      };
+
+      return (
+        <div style={{borderBottom:isLast?"none":`1px solid ${T.navBorder}`, paddingBottom:isLast?0:10, marginBottom:isLast?0:10}}>
+          {editing ? (
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <div style={tagStyle}>{meal.toUpperCase()}</div>
+                <input autoFocus value={draft.name} placeholder="Nombre del plato..."
+                  onChange={e=>setDraft(p=>({...p,name:e.target.value}))}
+                  style={inp} onKeyDown={e=>e.key==="Enter"&&save2()} />
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:6}}>
+                {[["kcal","⚡kcal"],["prot","Prot g"],["carbs","Carbs g"],["fat","Grasa g"]].map(([k,lbl])=>(
+                  <input key={k} value={draft.macros[k]} placeholder={lbl}
+                    onChange={e=>setDraft(p=>({...p,macros:{...p.macros,[k]:e.target.value}}))}
+                    style={{...inp,fontSize:11,padding:"6px 7px",textAlign:"center"}} />
+                ))}
+              </div>
+              <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+                <Pill onClick={save2} bg={T.accentMint} style={{padding:"6px 16px",fontSize:12}}>✓ Guardar</Pill>
+                <Pill onClick={cancel} bg={T.cardBorder} color={T.mainText} style={{padding:"6px 14px",fontSize:12}}>Cancelar</Pill>
+                <Pill onClick={()=>onLinkRecipe(draft,setDraft)} bg="#B8A0D8" style={{padding:"6px 14px",fontSize:12}}>🔗 Receta</Pill>
+                {entry.name && <Pill onClick={clear} bg="transparent" color="#E57373" style={{padding:"6px 10px",fontSize:12,border:"1.5px solid #E57373",marginLeft:"auto"}}>🗑</Pill>}
+              </div>
+            </div>
+          ) : (
+            <div style={{display:"flex",alignItems:"flex-start",gap:12,cursor:"pointer"}} onClick={open}>
+              <div style={{...tagStyle,cursor:"pointer"}}>{meal.toUpperCase()}</div>
+              <div style={{flex:1,paddingTop:4}}>
+                {entry.name ? (
+                  <>
+                    <div style={{fontSize:14,fontWeight:700,color:T.mainText,lineHeight:1.3}}>{entry.name}</div>
+                    {linked && <div style={{fontSize:11,color:"#B8A0D8",marginTop:2}}>📎 {linked.name}</div>}
+                    <MacroChips macros={entry.macros} />
+                  </>
+                ) : (
+                  <span style={{fontSize:14,color:T.placeholder,fontStyle:"italic"}}>Añadir comida</span>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function DayCard({ day, dayData, weekIdx, onCellChange, onLinkRecipe, recipes }) {
+      const allFilled = MEALS.every(m=>dayData[m].name);
+      return (
+        <div style={{position:"relative",marginBottom:22}}>
+          <div style={{
+            position:"absolute",top:-16,left:"50%",transform:"translateX(-50%)",
+            background:T.dayPill,color:T.dayPillText,borderRadius:30,padding:"8px 32px",
+            fontWeight:900,fontSize:15,letterSpacing:1.5,zIndex:2,whiteSpace:"nowrap",
+            boxShadow:"0 2px 8px #F2A8BB50",border:"1.5px solid #F4C0CE",
+          }}>{day.toUpperCase()}</div>
+          <div style={{
+            background:T.cardBg,borderRadius:18,border:`1.5px solid ${T.cardBorder}`,
+            padding:"32px 16px 16px",boxShadow:"0 2px 10px #D9C8C520",position:"relative",
+          }}>
+            <div style={{position:"absolute",top:12,right:14,opacity:allFilled?0.35:1}}>
+              <TicketIcon />
+            </div>
+            {MEALS.map((meal,i)=>(
+              <MealRow key={meal} meal={meal} entry={dayData[meal]}
+                onChange={val=>onCellChange(weekIdx,day,meal,val)}
+                onLinkRecipe={(draft,setDraft)=>onLinkRecipe(draft,setDraft,weekIdx,day,meal)}
+                recipes={recipes} isLast={i===MEALS.length-1} />
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function WeekView({ weeks, currentWeek, onCellChange, onLinkRecipe, recipes }) {
+      return (
+        <div style={{paddingTop:10}}>
+          {DAYS.map(day=>(
+            <DayCard key={day} day={day} dayData={weeks[currentWeek][day]} weekIdx={currentWeek}
+              onCellChange={onCellChange} onLinkRecipe={onLinkRecipe} recipes={recipes} />
+          ))}
+        </div>
+      );
+    }
+
+    function ShoppingList({ items, setItems }) {
+      const [newItem,setNewItem]=useState("");
+      const [newQty,setNewQty]=useState("");
+      function add() {
+        if(!newItem.trim())return;
+        const updated=[...items,{id:Date.now(),name:newItem.trim(),qty:newQty.trim(),done:false}];
+        setItems(updated); save("shopping",updated);
+        setNewItem(""); setNewQty("");
+      }
+      function toggle(id){ const u=items.map(i=>i.id===id?{...i,done:!i.done}:i); setItems(u); save("shopping",u); }
+      function remove(id){ const u=items.filter(i=>i.id!==id); setItems(u); save("shopping",u); }
+      function clearDone(){ const u=items.filter(i=>!i.done); setItems(u); save("shopping",u); }
+
+      const pending=items.filter(i=>!i.done);
+      const done=items.filter(i=>i.done);
+      return (
+        <div style={{maxWidth:480,margin:"0 auto"}}>
+          <div style={{display:"flex",gap:8,marginBottom:18}}>
+            <input value={newItem} onChange={e=>setNewItem(e.target.value)} placeholder="Ingrediente..." style={{...inp,flex:1}} onKeyDown={e=>e.key==="Enter"&&add()} />
+            <input value={newQty} onChange={e=>setNewQty(e.target.value)} placeholder="Cant." style={{...inp,width:72}} onKeyDown={e=>e.key==="Enter"&&add()} />
+            <Pill onClick={add} bg={T.accentMint} style={{borderRadius:14,padding:"8px 16px",fontSize:18}}>+</Pill>
+          </div>
+          {items.length===0&&<div style={{textAlign:"center",color:T.placeholder,padding:48,fontSize:15}}>🛒 Lista vacía</div>}
+          {pending.map(item=>(
+            <div key={item.id} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 14px",background:T.cardBg,border:`1.5px solid ${T.cardBorder}`,borderRadius:14,marginBottom:8}}>
+              <div onClick={()=>toggle(item.id)} style={{width:22,height:22,borderRadius:7,border:`2px solid ${T.mealTag}`,background:"transparent",cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}></div>
+              <span style={{flex:1,fontSize:14,color:T.mainText}}>{item.name}</span>
+              {item.qty&&<span style={{fontSize:12,color:T.subText,fontWeight:700}}>{item.qty}</span>}
+              <button onClick={()=>remove(item.id)} style={{background:"none",border:"none",cursor:"pointer",color:T.placeholder,fontSize:20}}>×</button>
+            </div>
+          ))}
+          {done.length>0&&(
+            <>
+              <div style={{display:"flex",alignItems:"center",gap:10,margin:"16px 0 8px"}}>
+                <span style={{fontSize:11,color:T.placeholder,fontWeight:800}}>COMPLETADO ({done.length})</span>
+                <Pill onClick={clearDone} bg="#E57373" style={{padding:"3px 12px",fontSize:11}}>Limpiar</Pill>
+              </div>
+              {done.map(item=>(
+                <div key={item.id} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 14px",background:"#F8F4F3",border:`1.5px solid ${T.cardBorder}`,borderRadius:14,marginBottom:8,opacity:0.6}}>
+                  <div onClick={()=>toggle(item.id)} style={{width:22,height:22,borderRadius:7,border:`2px solid ${T.mealTag}`,background:T.mealTag,cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                    <span style={{color:"#fff",fontSize:13}}>✓</span>
+                  </div>
+                  <span style={{flex:1,fontSize:14,color:T.mainText,textDecoration:"line-through"}}>{item.name}</span>
+                  {item.qty&&<span style={{fontSize:12,color:T.subText,fontWeight:700}}>{item.qty}</span>}
+                  <button onClick={()=>remove(item.id)} style={{background:"none",border:"none",cursor:"pointer",color:T.placeholder,fontSize:20}}>×</button>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      );
+    }
+
+    async function extractRecipeFromUrl(url) {
+      const prompt = `You are a recipe extraction assistant. URL: ${url}\nRespond ONLY with valid JSON, no markdown:\n{"name":"Recipe name","notes":"Brief description or: Abre el enlace para ver la receta.","tags":"comma-separated tags","macros":{"kcal":"","prot":"","carbs":"","fat":""}}`;
+      const res = await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:800,messages:[{role:"user",content:prompt}]}),
+      });
+      const data = await res.json();
+      const text = data.content.map(b=>b.text||"").join("").replace(/```json|```/g,"").trim();
+      return JSON.parse(text);
+    }
+
+    function Recipes({ recipes, setRecipes }) {
+      const [form,setForm]=useState(null);
+      const [detail,setDetail]=useState(null);
+      const [urlInput,setUrlInput]=useState("");
+      const [extracting,setExtracting]=useState(false);
+      const [extractError,setExtractError]=useState("");
+
+      async function handleExtract() {
+        if(!urlInput.trim())return;
+        setExtracting(true); setExtractError("");
+        try {
+          const d=await extractRecipeFromUrl(urlInput.trim());
+          setForm({id:null,name:d.name||"",url:urlInput.trim(),notes:d.notes||"",tags:d.tags||"",macros:d.macros||{kcal:"",prot:"",carbs:"",fat:""}});
+          setUrlInput("");
+        } catch {
+          setExtractError("No se pudo extraer. Rellena manualmente.");
+          setForm({id:null,name:"",url:urlInput.trim(),notes:"",tags:"",macros:{kcal:"",prot:"",carbs:"",fat:""}});
+        }
+        setExtracting(false);
+      }
+
+      function saveRecipe() {
+        if(!form?.name?.trim())return;
+        const updated = form.id ? recipes.map(r=>r.id===form.id?form:r) : [...recipes,{...form,id:Date.now()}];
+        setRecipes(updated); save("recipes",updated); setForm(null);
+      }
+
+      if(detail) {
+        const r=recipes.find(x=>x.id===detail);
+        if(!r){setDetail(null);return null;}
+        return (
+          <div>
+            <Pill onClick={()=>setDetail(null)} bg={T.cardBorder} color={T.mainText} style={{marginBottom:18,borderRadius:14}}>← Volver</Pill>
+            <div style={{background:T.cardBg,borderRadius:18,padding:22,border:`1.5px solid ${T.cardBorder}`}}>
+              <div style={{fontSize:32,marginBottom:8}}>📖</div>
+              <h2 style={{margin:"0 0 8px",color:T.mainText,fontSize:19}}>{r.name}</h2>
+              {r.tags&&<div style={{marginBottom:12,display:"flex",flexWrap:"wrap",gap:5}}>
+                {r.tags.split(",").map(t=><span key={t} style={{background:"#B8A0D820",color:"#8060B0",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:800}}>{t.trim()}</span>)}
+              </div>}
+              {r.url&&<a href={r.url} target="_blank" rel="noreferrer" style={{color:"#6B9FD4",fontSize:13,display:"block",marginBottom:12,wordBreak:"break-all"}}>🔗 {r.url}</a>}
+              {r.notes&&<p style={{color:T.subText,fontSize:14,lineHeight:1.7,marginBottom:12,whiteSpace:"pre-wrap"}}>{r.notes}</p>}
+              <MacroChips macros={r.macros} />
+              <div style={{display:"flex",gap:8,marginTop:18}}>
+                <Pill onClick={()=>{setForm(r);setDetail(null);}} bg="#E6933A" style={{borderRadius:14}}>✏️ Editar</Pill>
+                <Pill onClick={()=>{const u=recipes.filter(x=>x.id!==r.id);setRecipes(u);save("recipes",u);setDetail(null);}} bg="#E57373" style={{borderRadius:14}}>🗑 Eliminar</Pill>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div>
+          <div style={{background:"#FBF0FF",border:"1.5px solid #D4BCEC",borderRadius:18,padding:16,marginBottom:16}}>
+            <div style={{fontWeight:800,color:"#7050A0",fontSize:14,marginBottom:10}}>✨ Importar desde enlace</div>
+            <div style={{display:"flex",gap:8}}>
+              <input value={urlInput} onChange={e=>setUrlInput(e.target.value)} placeholder="Instagram, web de recetas, YouTube..."
+                style={{...inp,flex:1}} onKeyDown={e=>e.key==="Enter"&&!extracting&&handleExtract()} />
+              <Pill onClick={handleExtract} disabled={extracting||!urlInput.trim()} bg="#8060B0" style={{borderRadius:14,whiteSpace:"nowrap"}}>
+                {extracting?"⏳...":"Importar"}
+              </Pill>
+            </div>
+            {extractError&&<div style={{color:"#E57373",fontSize:12,marginTop:8}}>⚠️ {extractError}</div>}
+            <div style={{fontSize:11,color:T.placeholder,marginTop:7}}>La IA extrae nombre y datos. Podrás editarlos antes de guardar.</div>
+          </div>
+          <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}>
+            <Pill onClick={()=>setForm({id:null,name:"",url:"",notes:"",tags:"",macros:{kcal:"",prot:"",carbs:"",fat:""}})}
+              bg={T.dayPill} color={T.dayPillText} style={{borderRadius:14}}>+ Añadir manualmente</Pill>
+          </div>
+          {form&&(
+            <div style={{background:"#FFF8F7",borderRadius:16,padding:18,marginBottom:18,border:"2px solid #B8A0D8"}}>
+              <h3 style={{margin:"0 0 12px",color:T.mainText,fontSize:16}}>{form.id?"Editar":"Nueva receta"}</h3>
+              <div style={{display:"flex",flexDirection:"column",gap:9}}>
+                <input value={form.name} placeholder="Nombre *" onChange={e=>setForm(p=>({...p,name:e.target.value}))} style={inp} />
+                <input value={form.url} placeholder="URL" onChange={e=>setForm(p=>({...p,url:e.target.value}))} style={inp} />
+                <input value={form.tags} placeholder="Etiquetas: keto, anti-inflamatoria..." onChange={e=>setForm(p=>({...p,tags:e.target.value}))} style={inp} />
+                <textarea value={form.notes} placeholder="Notas e instrucciones..." onChange={e=>setForm(p=>({...p,notes:e.target.value}))} style={{...inp,minHeight:76,resize:"vertical"}} />
+                <div style={{fontSize:11,fontWeight:800,color:T.placeholder,letterSpacing:0.5}}>MACROS (OPCIONAL)</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:6}}>
+                  {[["kcal","⚡"],["prot","P g"],["carbs","C g"],["fat","G g"]].map(([k,lbl])=>(
+                    <input key={k} value={form.macros[k]} placeholder={lbl}
+                      onChange={e=>setForm(p=>({...p,macros:{...p.macros,[k]:e.target.value}}))}
+                      style={{...inp,fontSize:11,padding:"6px 7px",textAlign:"center"}} />
+                  ))}
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <Pill onClick={saveRecipe} bg="#8060B0" style={{borderRadius:14}}>✓ Guardar</Pill>
+                  <Pill onClick={()=>setForm(null)} bg={T.cardBorder} color={T.mainText} style={{borderRadius:14}}>Cancelar</Pill>
+                </div>
+              </div>
+            </div>
+          )}
+          {recipes.length===0&&!form&&<div style={{textAlign:"center",color:T.placeholder,padding:56,fontSize:15}}>📖 Sin recetas aún</div>}
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {recipes.map(r=>(
+              <div key={r.id} onClick={()=>setDetail(r.id)} style={{background:T.cardBg,borderRadius:16,padding:"14px 16px",border:`1.5px solid ${T.cardBorder}`,cursor:"pointer",display:"flex",gap:14,alignItems:"center"}}>
+                <div style={{fontSize:26}}>📖</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontWeight:800,color:T.mainText,fontSize:14}}>{r.name}</div>
+                  {r.tags&&<div style={{fontSize:11,color:"#8060B0",marginTop:2}}>{r.tags.split(",").map(t=>t.trim()).join(" · ")}</div>}
+                  {r.url&&<div style={{fontSize:11,color:"#6B9FD4",marginTop:2}}>🔗 Enlace guardado</div>}
+                  <MacroChips macros={r.macros} />
+                </div>
+                <div style={{color:T.placeholder,fontSize:20}}>›</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function LinkRecipeModal({ recipes, onSelect, onClose }) {
+      return (
+        <div style={{position:"fixed",inset:0,background:"#3D252580",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:1000}} onClick={onClose}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:"22px 22px 0 0",padding:"18px 20px 40px",width:"100%",maxWidth:480,maxHeight:"60vh",overflow:"auto"}}>
+            <div style={{width:40,height:4,background:T.cardBorder,borderRadius:4,margin:"0 auto 16px"}} />
+            <h3 style={{margin:"0 0 14px",color:T.mainText,fontSize:16,fontWeight:800}}>Vincular receta</h3>
+            <Pill onClick={()=>onSelect(null)} bg={T.cardBorder} color={T.mainText} style={{marginBottom:10,width:"100%",borderRadius:14}}>✕ Sin receta</Pill>
+            {recipes.length===0&&<p style={{color:T.placeholder,fontSize:13}}>No tienes recetas guardadas aún.</p>}
+            {recipes.map(r=>(
+              <div key={r.id} onClick={()=>onSelect(r.id)} style={{padding:"11px 14px",borderRadius:12,border:`1.5px solid ${T.cardBorder}`,cursor:"pointer",marginBottom:8}}>
+                <div style={{fontWeight:800,fontSize:14,color:T.mainText}}>{r.name}</div>
+                {r.tags&&<div style={{fontSize:11,color:"#8060B0"}}>{r.tags}</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function WeekDropdown({ weeks, currentWeek, setCurrentWeek, onAddWeek }) {
+      const [open,setOpen]=useState(false);
+      return (
+        <div style={{position:"relative",flex:1}}>
+          <div onClick={()=>setOpen(p=>!p)} style={{background:"#FFF3F0",border:`1.5px solid ${T.cardBorder}`,borderRadius:30,padding:"11px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}>
+            <span style={{fontWeight:800,fontSize:16,color:T.mainText}}>Semana {currentWeek+1}</span>
+            <span style={{color:T.subText,fontSize:20}}>⌄</span>
+          </div>
+          {open&&(
+            <div style={{position:"absolute",top:"110%",left:0,right:0,background:"#fff",borderRadius:16,border:`1.5px solid ${T.cardBorder}`,boxShadow:"0 8px 28px #0002",zIndex:200,overflow:"hidden"}}>
+              {weeks.map((_,i)=>(
+                <div key={i} onClick={()=>{setCurrentWeek(i);setOpen(false);}} style={{padding:"13px 20px",fontWeight:700,fontSize:15,color:currentWeek===i?T.accentPink:T.mainText,background:currentWeek===i?"#FFF0F3":"#fff",borderBottom:`1px solid ${T.navBorder}`,cursor:"pointer"}}>
+                  Semana {i+1}
+                </div>
+              ))}
+              <div onClick={()=>{onAddWeek();setOpen(false);}} style={{padding:"13px 20px",fontWeight:700,fontSize:15,color:T.accentMint,cursor:"pointer"}}>+ Nueva semana</div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function App() {
+      const [tab,setTab]             = useState("planner");
+      const [weeks,setWeeks]         = useState(()=>load("weeks",[makeWeek(),makeWeek()]));
+      const [currentWeek,setCurrentWeek] = useState(0);
+      const [shoppingItems,setShoppingItems] = useState(()=>load("shopping",[]));
+      const [recipes,setRecipes]     = useState(()=>load("recipes",[]));
+      const [linkModal,setLinkModal] = useState(null);
+
+      function onCellChange(weekIdx,day,meal,val) {
+        const updated=weeks.map((w,i)=>i!==weekIdx?w:{...w,[day]:{...w[day],[meal]:val}});
+        setWeeks(updated); save("weeks",updated);
+      }
+      function onLinkRecipe(draft,setDraft,weekIdx,day,meal) { setLinkModal({draft,setDraft,weekIdx,day,meal}); }
+      function handleLinkSelect(recipeId) {
+        const {draft,setDraft}=linkModal;
+        const recipe=recipeId?recipes.find(r=>r.id===recipeId):null;
+        const updated={...draft,recipeId};
+        if(recipe){ if(!updated.name)updated.name=recipe.name; if(recipe.macros.kcal||recipe.macros.prot)updated.macros={...recipe.macros}; }
+        setDraft(updated); setLinkModal(null);
+      }
+      function addWeek(){ const updated=[...weeks,makeWeek()]; setWeeks(updated); save("weeks",updated); setCurrentWeek(weeks.length); }
+
+      const filled=DAYS.reduce((n,d)=>n+MEALS.filter(m=>weeks[currentWeek][d][m].name).length,0);
+
+      const NAV=[
+        {id:"shopping",icon:"🛒",label:"Compra"},
+        {id:"planner", icon:"🥗",label:"Plan"},
+        {id:"recipes", icon:"👩‍🍳",label:"Recetas"},
+      ];
+
+      return (
+        <div style={{minHeight:"100vh",background:T.pageBg,paddingBottom:90}}>
+          {/* Top bar */}
+          <div style={{padding:"16px 16px 12px",background:T.pageBg,position:"sticky",top:0,zIndex:50}}>
+            {tab==="planner"&&(
+              <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                <WeekDropdown weeks={weeks} currentWeek={currentWeek} setCurrentWeek={setCurrentWeek} onAddWeek={addWeek} />
+                <div style={{background:"#FFF3F0",border:`1.5px solid ${T.cardBorder}`,borderRadius:30,width:48,height:48,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:13,color:T.subText}}>
+                  <span>{filled}</span><span style={{fontSize:9}}>/{DAYS.length*MEALS.length}</span>
+                </div>
+              </div>
+            )}
+            {tab!=="planner"&&(
+              <div style={{fontWeight:900,fontSize:20,color:T.mainText,textAlign:"center"}}>
+                {tab==="shopping"?"🛒 Lista de la Compra":"👩‍🍳 Recetas"}
+              </div>
+            )}
+          </div>
+
+          {/* Content */}
+          <div style={{padding:"4px 14px 20px"}}>
+            {tab==="planner"&&<WeekView weeks={weeks} currentWeek={currentWeek} onCellChange={onCellChange} onLinkRecipe={onLinkRecipe} recipes={recipes} />}
+            {tab==="shopping"&&<ShoppingList items={shoppingItems} setItems={setShoppingItems} />}
+            {tab==="recipes"&&<Recipes recipes={recipes} setRecipes={setRecipes} />}
+          </div>
+
+          {/* Bottom nav */}
+          <div style={{position:"fixed",bottom:0,left:0,right:0,background:T.navBg,borderTop:`1.5px solid ${T.navBorder}`,display:"flex",padding:"8px 0 18px"}}>
+            {NAV.map(t=>(
+              <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3,border:"none",background:"none",cursor:"pointer",padding:"4px 0"}}>
+                <span style={{fontSize:22}}>{t.icon}</span>
+                <span style={{fontSize:11,fontWeight:900,color:tab===t.id?T.accentPink:T.navInactive}}>{t.label}</span>
+                {tab===t.id&&<div style={{width:18,height:3,background:T.accentPink,borderRadius:2}} />}
+              </button>
+            ))}
+          </div>
+
+          {linkModal&&<LinkRecipeModal recipes={recipes} onSelect={handleLinkSelect} onClose={()=>setLinkModal(null)} />}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
