@@ -9,50 +9,54 @@ export default async function handler(req, res) {
   try {
     const { preferences, avoid } = req.body;
 
-    const prompt = `Eres un nutricionista experto en dieta keto y anti-inflamatoria.
-Crea un menú semanal completo (7 días, comida y cena) con estas preferencias: ${preferences}.
-Alimentos a evitar: ${avoid || "ninguno"}.
-Responde SOLO con JSON válido sin markdown.`;
+    const prompt = `
+Eres un nutricionista experto en dieta keto.
+Crea un menú semanal (7 días, comida y cena).
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
+Preferencias: ${preferences}
+Evitar: ${avoid || "ninguno"}
+
+Reglas:
+- keto estricto
+- sin azúcar, sin cereales, sin legumbres
+- máximo 20g carbohidratos por comida
+
+Responde SOLO JSON válido.
+`;
+
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 2000,
-        messages: [{ role: 'user', content: prompt }]
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "user", content: prompt }
+        ],
+        temperature: 0.7
       })
     });
 
     const data = await response.json();
 
-    // 🔥 VALIDACIÓN CLAVE
-    if (!data.content || !Array.isArray(data.content)) {
-      console.error('Respuesta Anthropic inválida:', data);
+    const text = data.choices?.[0]?.message?.content;
+
+    if (!text) {
       return res.status(500).json({
-        error: 'Respuesta inválida de Anthropic',
+        error: "No response from OpenAI",
         raw: data
       });
     }
-
-    const text = data.content
-      .map(b => b.text || '')
-      .join('')
-      .replace(/```json|```/g, '')
-      .trim();
 
     const parsed = JSON.parse(text);
 
     return res.status(200).json(parsed);
 
   } catch (error) {
-    console.error(error);
     return res.status(500).json({
-      error: 'Error generando menú',
+      error: "Error generando menú",
       details: error.message
     });
   }
