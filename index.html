@@ -2,21 +2,18 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <meta name="theme-color" content="#FAE8E4" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Meal Planner</title>
 
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&display=swap" rel="stylesheet" />
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 
   <style>
-    *{box-sizing:border-box;margin:0;padding:0;}
-    body{background:#FAE8E4;font-family:'Nunito',sans-serif;}
-    button{font-family:'Nunito',sans-serif;}
-    input,textarea{font-family:'Nunito',sans-serif;}
+    body{margin:0;font-family:Nunito;background:#FAE8E4;}
+    button{font-family:Nunito;cursor:pointer;}
   </style>
 </head>
 
@@ -27,33 +24,37 @@
 
 const { useState } = React;
 
-/* =======================
-   STORAGE HELPERS
-======================= */
-function ls(k,d){
-  try{return JSON.parse(localStorage.getItem(k)) ?? d;}catch{return d;}
-}
-function ss(k,v){
-  localStorage.setItem(k, JSON.stringify(v));
-}
+/* ===================== APP ===================== */
 
-/* =======================
-   APP
-======================= */
 function App(){
   const [menu,setMenu] = useState(null);
   const [show,setShow] = useState(false);
 
   return(
     <div style={{padding:20}}>
-      <h1>🥗 Meal Planner</h1>
+      <h2>🥗 Meal Planner</h2>
 
-      <button onClick={()=>setShow(true)} style={{padding:10,marginTop:20}}>
+      <button
+        onClick={()=>setShow(true)}
+        style={{
+          padding:12,
+          background:"#E8879E",
+          color:"#fff",
+          border:"none",
+          borderRadius:12,
+          fontWeight:800
+        }}
+      >
         Generar menú IA
       </button>
 
       {menu && (
-        <pre style={{marginTop:20,background:"#fff",padding:10,borderRadius:10}}>
+        <pre style={{
+          marginTop:20,
+          background:"#fff",
+          padding:10,
+          borderRadius:10
+        }}>
           {JSON.stringify(menu,null,2)}
         </pre>
       )}
@@ -61,8 +62,8 @@ function App(){
       {show && (
         <AIMenuModal
           onClose={()=>setShow(false)}
-          onGenerate={(data)=>{
-            setMenu(data);
+          onGenerate={(m)=>{
+            setMenu(m);
             setShow(false);
           }}
         />
@@ -71,10 +72,10 @@ function App(){
   );
 }
 
-/* =======================
-   IA MODAL (FIXED)
-======================= */
+/* ===================== IA MODAL ===================== */
+
 function AIMenuModal({onGenerate,onClose}){
+
   const [avoid,setAvoid] = useState("");
   const [extra,setExtra] = useState("");
   const [loading,setLoading] = useState(false);
@@ -87,7 +88,7 @@ function AIMenuModal({onGenerate,onClose}){
     try{
       const res = await fetch("/api/menu",{
         method:"POST",
-        headers:{ "Content-Type":"application/json" },
+        headers:{"Content-Type":"application/json"},
         body: JSON.stringify({
           preferences: extra,
           avoid: avoid
@@ -95,7 +96,12 @@ function AIMenuModal({onGenerate,onClose}){
       });
 
       const data = await res.json();
+
       console.log("RESPUESTA:", data);
+
+      if(!res.ok){
+        throw new Error("HTTP error");
+      }
 
       if(!data || !data.menu){
         throw new Error("Sin menú");
@@ -113,7 +119,8 @@ function AIMenuModal({onGenerate,onClose}){
 
   return(
     <div style={{
-      position:"fixed",inset:0,
+      position:"fixed",
+      inset:0,
       background:"#00000066",
       display:"flex",
       alignItems:"flex-end",
@@ -133,28 +140,24 @@ function AIMenuModal({onGenerate,onClose}){
         }}
       >
 
-        <h2>🤖 Generar menú IA</h2>
-
-        <p style={{fontSize:12,opacity:0.7}}>
-          Keto + antiinflamatorio
-        </p>
+        <h3>🤖 Generar menú IA</h3>
 
         <textarea
-          placeholder="Qué quieres incluir..."
+          placeholder="Preferencias (ej: más pescado, keto)"
           value={extra}
           onChange={e=>setExtra(e.target.value)}
-          style={{width:"100%",marginTop:10,padding:10}}
+          style={{width:"100%",padding:10,marginTop:10}}
         />
 
         <input
           placeholder="Alimentos a evitar"
           value={avoid}
           onChange={e=>setAvoid(e.target.value)}
-          style={{width:"100%",marginTop:10,padding:10}}
+          style={{width:"100%",padding:10,marginTop:10}}
         />
 
         {error && (
-          <div style={{color:"red",marginTop:10}}>
+          <div style={{color:"red",marginTop:10,fontWeight:700}}>
             {error}
           </div>
         )}
@@ -169,8 +172,8 @@ function AIMenuModal({onGenerate,onClose}){
             background:"#E8879E",
             color:"#fff",
             border:"none",
-            borderRadius:10,
-            fontWeight:700
+            borderRadius:12,
+            fontWeight:900
           }}
         >
           {loading ? "Generando..." : "Generar menú"}
@@ -181,9 +184,8 @@ function AIMenuModal({onGenerate,onClose}){
   );
 }
 
-/* =======================
-   RENDER
-======================= */
+/* ===================== RENDER ===================== */
+
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 
 </script>
